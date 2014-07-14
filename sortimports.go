@@ -34,6 +34,7 @@ var nflag = flag.Bool("n", false, "print files that have changed, but do not wri
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: sortimports [pkg...]\n")
+		flag.PrintDefaults()
 		os.Exit(2)
 	}
 	flag.Parse()

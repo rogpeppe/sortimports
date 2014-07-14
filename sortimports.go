@@ -161,7 +161,7 @@ func sortImportSection(pkgPath string, w io.Writer, r io.Reader) error {
 	}
 	byg := byGroup{
 		localPackagePrefix: localPackagePrefix(pkgPath),
-		imports: imps,
+		imports:            imps,
 	}
 	sort.Sort(byg)
 	g := 0
@@ -180,7 +180,7 @@ func sortImportSection(pkgPath string, w io.Writer, r io.Reader) error {
 
 type byGroup struct {
 	localPackagePrefix string
-	imports []imp
+	imports            []imp
 }
 
 func (byg byGroup) Less(i, j int) bool {

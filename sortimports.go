@@ -212,24 +212,25 @@ func (byg byGroup) group(path string) int {
 	return 0
 }
 
-var matchers = []func(pkg string) string{
-	matcher(`^github\.com/[^/]+/[^/]+`),
-	matcher(`^launchpad\.net/[^/]+`),
-	matcher(`^code\.google\.com/p/[^/]+`),
-	matcher(`^[a-z]\.[^/]+/[^/]+`),
+var matchers = []func(pkg string) []string{
+	matcher(`^(gopkg\.in/([^/]*/)?[^/]+\.v[0-9]+)(/|$)`),
+	matcher(`^(github\.com/[^/]+/[^/]+)`),
+	matcher(`^(launchpad\.net/[^/]+)`),
+	matcher(`^(code\.google\.com/p/[^/]+)`),
+	matcher(`^([a-z]\.[^/]+/[^/]+)`),
 }
 
-func matcher(pat string) func(pkg string) string {
+func matcher(pat string) func(pkg string) []string {
 	re := regexp.MustCompile(pat)
-	return func(pkg string) string {
-		return re.FindString(pkg)
+	return func(pkg string) []string {
+		return re.FindStringSubmatch(pkg)
 	}
 }
 
 func localPackagePrefix(pkg string) string {
 	for _, m := range matchers {
-		if prefix := m(pkg); prefix != "" {
-			return prefix
+		if matches := m(pkg); matches != nil {
+			return matches[1]
 		}
 	}
 	return ""

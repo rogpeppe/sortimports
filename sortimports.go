@@ -37,21 +37,61 @@ func main() {
 		flag.PrintDefaults()
 		os.Exit(2)
 	}
+	stdin := flag.String("c", "", "operate on stdin, with the local package path derived from this flags value")
 	flag.Parse()
-	pkgs := flag.Args()
-	if len(pkgs) == 0 {
-		pkgs = []string{"."}
-	}
 	wd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot get current working directory: %v", err)
 		os.Exit(2)
 	}
 	cwd = wd
+	if *stdin != "" {
+		processStdin(*stdin)
+	}
+	pkgs := flag.Args()
+	// Only assume the package in cwd if stdin wasn't used.
+	if len(pkgs) == 0 && *stdin == "" {
+		pkgs = []string{"."}
+	}
 	for _, pkg := range gotool.ImportPaths(pkgs) {
 		sortImports(pkg)
 	}
 	os.Exit(exitCode)
+}
+
+func processStdin(path string) {
+	// Absolute paths must be made relative, with prefixed "./" to work with
+	// build.Import.
+	if filepath.IsAbs(path) {
+		var err error
+		path, err = filepath.Rel(cwd, path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "can't create relative path: %s", err)
+			os.Exit(2)
+		}
+		path = "./" + path
+	}
+	pkg, err := build.Import(path, cwd, build.FindOnly)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot read package: %s", err)
+		os.Exit(2)
+	}
+	input, err := ioutil.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading stdin: %s", err)
+		os.Exit(1)
+	}
+	output, err := process(pkg.ImportPath, input)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error in processing: %s", err)
+		os.Exit(1)
+	}
+	output, err = format.Source(output)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error formatting: %s", err)
+		os.Exit(1)
+	}
+	os.Stdout.Write(output)
 }
 
 func sortImports(pkgPath string) {

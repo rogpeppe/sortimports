@@ -217,7 +217,7 @@ var matchers = []func(pkg string) []string{
 	matcher(`^(github\.com/[^/]+/[^/]+)`),
 	matcher(`^(launchpad\.net/[^/]+)`),
 	matcher(`^(code\.google\.com/p/[^/]+)`),
-	matcher(`^([a-z]\.[^/]+/[^/]+)`),
+	matcher(`^([a-z]+\.[^/]+/[^/]+)`),
 }
 
 func matcher(pat string) func(pkg string) []string {

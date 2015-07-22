@@ -253,7 +253,7 @@ func (byg byGroup) group(path string) int {
 }
 
 var matchers = []func(pkg string) []string{
-	matcher(`^(gopkg\.in/([^/]*/)?[^/]+\.v[0-9]+)(/|$)`),
+	matcher(`^(gopkg\.in/([^/]*/)?[^/]+\.v[0-9]+(-unstable)?)(/|$)`),
 	matcher(`^(github\.com/[^/]+/[^/]+)`),
 	matcher(`^(bitbucket\.org/[^/]+/[^/]+)`),
 	matcher(`^(launchpad\.net/[^/]+)`),

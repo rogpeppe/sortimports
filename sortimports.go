@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"go/build"
 	"go/format"
 	"io"
 	"io/ioutil"
@@ -16,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kisielk/gotool"
+	"golang.org/x/tools/go/packages"
 )
 
 type imp struct {
@@ -27,7 +26,6 @@ type imp struct {
 }
 
 var exitCode int
-var cwd string
 
 var nflag = flag.Bool("n", false, "print files that have changed, but do not write")
 
@@ -38,36 +36,39 @@ func main() {
 		os.Exit(2)
 	}
 	flag.Parse()
-	pkgs := flag.Args()
-	if len(pkgs) == 0 {
-		pkgs = []string{"."}
+	pkgPaths := flag.Args()
+	if len(pkgPaths) == 0 {
+		pkgPaths = []string{"."}
 	}
-	wd, err := os.Getwd()
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.LoadFiles,
+	}, pkgPaths...)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot get current working directory: %v", err)
-		os.Exit(2)
+		fmt.Fprintf(os.Stderr, "cannot get load packages: %v", err)
+		os.Exit(1)
 	}
-	cwd = wd
-	for _, pkg := range gotool.ImportPaths(pkgs) {
+	for _, pkg := range pkgs {
 		sortImports(pkg)
 	}
 	os.Exit(exitCode)
 }
 
-func sortImports(pkgPath string) {
-	pkg, err := build.Import(pkgPath, cwd, build.FindOnly)
-	if err != nil {
-		warning("cannot read package %q: %v", pkg, err)
+func sortImports(pkg *packages.Package) {
+	if len(pkg.GoFiles) == 0 {
+		warning("no Go files found in %q", pkg.PkgPath)
 		return
 	}
-	pkgPath = pkg.ImportPath
-	infos, err := ioutil.ReadDir(pkg.Dir)
+	// We want to process all Go files in the directory,
+	// not just ones with matching tags, so read the directory
+	// instead of using pkg.GoFiles.
+	dir := filepath.Dir(pkg.GoFiles[0])
+	infos, err := ioutil.ReadDir(dir)
 	if err != nil {
-		warning("cannot read %q: %v", pkg.Dir, err)
+		warning("cannot read %q: %v", dir, err)
 		return
 	}
 	for _, info := range infos {
-		path := filepath.Join(pkg.Dir, info.Name())
+		path := filepath.Join(dir, info.Name())
 		if !strings.HasSuffix(path, ".go") {
 			continue
 		}
@@ -76,7 +77,7 @@ func sortImports(pkgPath string) {
 			warning("cannot read %q: %v", path, err)
 			continue
 		}
-		result, err := process(pkgPath, data)
+		result, err := process(pkg.PkgPath, data)
 		if err != nil {
 			warning("%s: %v", path, err)
 			continue

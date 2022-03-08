@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"flag"
+	stdflag "flag"
 	"fmt"
 	"go/format"
 	"io"
@@ -27,33 +27,44 @@ type imp struct {
 
 var exitCode int
 
+var flag = stdflag.NewFlagSet(os.Args[0], stdflag.ContinueOnError)
+
 var nflag = flag.Bool("n", false, "print files that have changed, but do not write")
 
 func main() {
+	os.Exit(Main())
+}
+
+func Main() int {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: sortimports [pkg...]\n")
 		flag.PrintDefaults()
-		os.Exit(2)
 	}
-	flag.Parse()
+	if err := flag.Parse(os.Args[1:]); err != nil {
+		return 2
+	}
 	pkgPaths := flag.Args()
 	if len(pkgPaths) == 0 {
 		pkgPaths = []string{"."}
 	}
 	pkgs, err := packages.Load(&packages.Config{
-		Mode: packages.LoadFiles,
+		Mode: packages.NeedFiles | packages.NeedModule | packages.NeedImports,
 	}, pkgPaths...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot get load packages: %v", err)
-		os.Exit(1)
+		return 1
 	}
 	for _, pkg := range pkgs {
 		sortImports(pkg)
 	}
-	os.Exit(exitCode)
+	return exitCode
 }
 
 func sortImports(pkg *packages.Package) {
+	if !pkg.Module.Main {
+		warning("not formatting packages in dependency modules")
+		return
+	}
 	if len(pkg.GoFiles) == 0 {
 		warning("no Go files found in %q", pkg.PkgPath)
 		return
@@ -77,7 +88,7 @@ func sortImports(pkg *packages.Package) {
 			warning("cannot read %q: %v", path, err)
 			continue
 		}
-		result, err := process(pkg.PkgPath, data)
+		result, err := process(pkg, data)
 		if err != nil {
 			warning("%s: %v", path, err)
 			continue
@@ -107,7 +118,7 @@ func warning(f string, a ...interface{}) {
 
 var importRegex = regexp.MustCompile(`import \((([^)]|\n)*)\)`)
 
-func process(pkgPath string, data []byte) ([]byte, error) {
+func process(pkg *packages.Package, data []byte) ([]byte, error) {
 	indexes := importRegex.FindSubmatchIndex(data)
 	if indexes == nil {
 		return data, nil
@@ -116,14 +127,14 @@ func process(pkgPath string, data []byte) ([]byte, error) {
 	var out bytes.Buffer
 	out.Write(data[0:i0])
 	in := bytes.NewReader(data[i0:i1])
-	if err := sortImportSection(pkgPath, &out, in); err != nil {
+	if err := sortImportSection(pkg, &out, in); err != nil {
 		return nil, err
 	}
 	out.Write(data[i1:])
 	return out.Bytes(), nil
 }
 
-func sortImportSection(pkgPath string, w io.Writer, r io.Reader) error {
+func sortImportSection(pkg *packages.Package, w io.Writer, r io.Reader) error {
 	var imps []imp
 	for scan := bufio.NewScanner(r); scan.Scan(); {
 		var preComments []string
@@ -161,8 +172,8 @@ func sortImportSection(pkgPath string, w io.Writer, r io.Reader) error {
 		imps = append(imps, i)
 	}
 	byg := byGroup{
-		localPackagePrefix: localPackagePrefix(pkgPath),
-		imports:            imps,
+		pkg:     pkg,
+		imports: imps,
 	}
 	sort.Sort(byg)
 	g := 0
@@ -180,8 +191,8 @@ func sortImportSection(pkgPath string, w io.Writer, r io.Reader) error {
 }
 
 type byGroup struct {
-	localPackagePrefix string
-	imports            []imp
+	pkg     *packages.Package
+	imports []imp
 }
 
 func (byg byGroup) Less(i, j int) bool {
@@ -201,38 +212,12 @@ func (byg byGroup) Len() int {
 }
 
 func (byg byGroup) group(path string) int {
-	prefix := byg.localPackagePrefix
-	if prefix != "" && strings.HasPrefix(path, prefix) {
-		if len(path) == len(prefix) || path[len(prefix)] == '/' {
-			return 2
-		}
+
+	if dp := byg.pkg.Imports[path]; dp != nil && dp.Module != nil && dp.Module.Main {
+		return 2
 	}
 	if strings.Contains(path, ".") {
 		return 1
 	}
 	return 0
-}
-
-var matchers = []func(pkg string) []string{
-	matcher(`^(gopkg\.in/([^/]*/)?[^/]+\.v[0-9]+(-unstable)?)(/|$)`),
-	matcher(`^(github\.com/[^/]+/[^/]+)`),
-	matcher(`^(launchpad\.net/[^/]+)`),
-	matcher(`^(code\.google\.com/p/[^/]+)`),
-	matcher(`^([a-z]\.[^/]+/[^/]+)`),
-}
-
-func matcher(pat string) func(pkg string) []string {
-	re := regexp.MustCompile(pat)
-	return func(pkg string) []string {
-		return re.FindStringSubmatch(pkg)
-	}
-}
-
-func localPackagePrefix(pkg string) string {
-	for _, m := range matchers {
-		if matches := m(pkg); matches != nil {
-			return matches[1]
-		}
-	}
-	return ""
 }
